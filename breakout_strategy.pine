@@ -1,68 +1,72 @@
 //@version=5
-strategy("NY Session 7-10am Breakout", overlay=true, default_qty_type=strategy.fixed, default_qty_value=1)
+strategy("NY Range Breakout", overlay=true, default_qty_type=strategy.percent_of_equity, default_qty_value=100, pyramiding=0)
 
-// NY Session variables
 var float ny_high = na
 var float ny_low = na
 var bool session_complete = false
-var bool orders_placed = false
+var float range_size = na
+var bool partial_closed = false
+
+current_hour = hour(time, "America/New_York")
+is_ny_session = (current_hour >= 7 and current_hour < 10)
+
+
 
 // Reset daily
-if ta.change(dayofmonth) != 0
+if ta.change(dayofmonth)
     ny_high := na
     ny_low := na
     session_complete := false
-    orders_placed := false
+    range_size := na
+    partial_closed := false
+    strategy.cancel_all()
 
-// NY Session 7am-10am EST
-current_hour = hour(time, "America/New_York")
-is_ny_session = current_hour >= 7 and current_hour < 10
-
-// Track NY session high/low during 7-10am
+// Record high/low during 7-10am and set range size
 if is_ny_session
-    if na(ny_high) or high > ny_high
-        ny_high := high
-    if na(ny_low) or low < ny_low
-        ny_low := low
+    ny_high := na(ny_high) ? high : math.max(ny_high, high)
+    ny_low := na(ny_low) ? low : math.min(ny_low, low)
+    if not na(ny_high) and not na(ny_low)
+        range_size := ny_high - ny_low
 
-// Session complete at 10am
-if current_hour == 10 and not session_complete
-    session_complete := true
+// Cancel all orders after NY session ends
+if not is_ny_session and current_hour >= 10
+    strategy.cancel_all()
 
-// Create and update lines DURING the NY session
-var line high_line = na
-var line low_line = na
-
-// During NY session, create/update the lines
+// Place breakout entries only during NY session
 if is_ny_session and not na(ny_high) and not na(ny_low)
-    // Delete old lines
-    if not na(high_line)
-        line.delete(high_line)
-    if not na(low_line)
-        line.delete(low_line)
-    
-    // Create new lines from session start to end (7am to 10am)
-    session_start = bar_index - (current_hour - 7) * 60 - minute
-    session_end = session_start + 180  // 3 hours = 180 minutes
-    
-    high_line := line.new(session_start, ny_high, session_end, ny_high, color=color.black, width=2)
-    low_line := line.new(session_start, ny_low, session_end, ny_low, color=color.black, width=2)
+    strategy.entry("Long", strategy.long, qty=2, stop=ny_high)
+    strategy.entry("Short", strategy.short, qty=2, stop=ny_low)
 
-// Place orders after session ends
-if session_complete and not orders_placed and not na(ny_high) and not na(ny_low)
-    strategy.entry("Long_Break", strategy.long, qty=1, stop=ny_high)
-    strategy.entry("Short_Break", strategy.short, qty=1, stop=ny_low)
-    orders_placed := true
-
-// Cancel opposite order and set stop when breakout occurs
+// Long trade management
 if strategy.position_size > 0
-    strategy.cancel("Short_Break")
-    strategy.exit("Long_SL", "Long_Break", stop=ny_low)
+    entry_price = strategy.position_avg_price
+    stop_loss = ny_low
+    take_profit = entry_price + range_size
+    partial_target = entry_price + (range_size * 0.5)
+    
+    if not partial_closed
+        strategy.exit("Long Exit", "Long", stop=stop_loss, limit=take_profit, qty=2)
+        
+        if high >= partial_target
+            strategy.close("Long", qty=1, comment="Partial TP")
+            strategy.exit("Long Trail", "Long", stop=entry_price + 5, limit=take_profit, qty=1)
+            partial_closed := true
 
+// Short trade management  
 if strategy.position_size < 0
-    strategy.cancel("Long_Break") 
-    strategy.exit("Short_SL", "Short_Break", stop=ny_high)
+    entry_price = strategy.position_avg_price
+    stop_loss = ny_high
+    take_profit = entry_price - range_size
+    partial_target = entry_price - (range_size * 0.5)
+    
+    if not partial_closed
+        strategy.exit("Short Exit", "Short", stop=stop_loss, limit=take_profit, qty=2)
+        
+        if low <= partial_target
+            strategy.close("Short", qty=1, comment="Partial TP")
+            strategy.exit("Short Trail", "Short", stop=entry_price - 5, limit=take_profit, qty=1)
+            partial_closed := true
 
-// End of day exit
-if hour(time, "America/New_York") >= 16
-    strategy.close_all("EOD")
+// Reset partial closed flag when no position
+if strategy.position_size == 0
+    partial_closed := false
