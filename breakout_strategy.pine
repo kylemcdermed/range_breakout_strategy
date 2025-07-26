@@ -1,13 +1,61 @@
 //@version=5
-strategy("NY AM Range Breakout (7-9am)", overlay=true, default_qty_type=strategy.percent_of_equity, default_qty_value=100, pyramiding=0, commission_type=strategy.commission.cash_per_contract, commission_value=5.0, slippage=2)
+strategy("NY AM Range Breakout (7-9am) - Kelly Sizing", overlay=true, default_qty_type=strategy.cash, default_qty_value=10000, pyramiding=0, commission_type=strategy.commission.cash_per_contract, commission_value=5.0, slippage=2)
+
+// Kelly Criterion Variables
+var float total_wins = 0
+var float total_losses = 0
+var float win_count = 0
+var float loss_count = 0
+var float avg_win = 0
+var float avg_loss = 0
+var float win_rate = 0
+var float kelly_fraction = 0
+var float optimal_position_size = 0
 
 var float ny_high = na
 var float ny_low = na
 var float range_size = na
 var bool partial_closed = false
+var float last_trade_result = na
 
 current_hour = hour(time, "America/New_York")
 is_ny_session = (current_hour >= 7 and current_hour < 9)
+
+// Track trade results for Kelly calculation
+if strategy.closedtrades > 0 and strategy.closedtrades != strategy.closedtrades[1]
+    last_trade_result := strategy.closedtrades.profit(strategy.closedtrades - 1)
+    
+    if last_trade_result > 0
+        total_wins := total_wins + last_trade_result
+        win_count := win_count + 1
+    else
+        total_losses := total_losses + math.abs(last_trade_result)
+        loss_count := loss_count + 1
+
+// Calculate Kelly metrics (use historical assumptions if no trades yet)
+total_trades = win_count + loss_count
+if total_trades > 0
+    win_rate := win_count / total_trades
+    avg_win := total_wins / math.max(win_count, 1)
+    avg_loss := total_losses / math.max(loss_count, 1)
+else
+    // Use strategy assumptions: 40% win rate, 1:1 risk/reward
+    win_rate := 0.40
+    avg_win := range_size * 50  // Assuming $50 per point
+    avg_loss := range_size * 50
+
+// Kelly Formula: f = (bp - q) / b
+if avg_loss > 0
+    b_ratio = avg_win / avg_loss
+    kelly_fraction := (b_ratio * win_rate - (1 - win_rate)) / b_ratio
+    kelly_fraction := math.max(0, math.min(kelly_fraction, 0.25)) // Cap at 25% for safety
+    
+    // Calculate optimal position size
+    account_value = strategy.equity
+    risk_per_contract = range_size * 50
+    if risk_per_contract > 0
+        optimal_position_size := math.floor((account_value * kelly_fraction) / risk_per_contract)
+        optimal_position_size := math.max(1, math.min(100, optimal_position_size))
 
 // Reset daily
 if ta.change(dayofmonth)
@@ -28,10 +76,14 @@ if is_ny_session
 if not is_ny_session and current_hour >= 10
     strategy.cancel_all()
 
-// Place breakout entries only during NY session
+// Place breakout entries only during NY session with Kelly-optimized sizing
 if is_ny_session and not na(ny_high) and not na(ny_low)
-    strategy.entry("Long", strategy.long, qty=2, stop=ny_high)
-    strategy.entry("Short", strategy.short, qty=2, stop=ny_low)
+    // Use Kelly sizing if we have enough trade history, otherwise default to 2 contracts
+    kelly_size = optimal_position_size > 0 and optimal_position_size <= 100 ? optimal_position_size : 2
+    position_size = math.max(1, math.min(100, kelly_size)) // Ensure valid range 1-100
+    
+    strategy.entry("Long", strategy.long, qty=position_size, stop=ny_high)
+    strategy.entry("Short", strategy.short, qty=position_size, stop=ny_low)
 
 // Long trade management
 if strategy.position_size > 0
@@ -39,13 +91,14 @@ if strategy.position_size > 0
     stop_loss = ny_low
     take_profit = entry_price + range_size
     partial_target = entry_price + (range_size * 0.5)
+    current_qty = math.abs(strategy.position_size)
     
     if not partial_closed
-        strategy.exit("Long Exit", "Long", stop=stop_loss, limit=take_profit, qty=2)
+        strategy.exit("Long Exit", "Long", stop=stop_loss, limit=take_profit, qty=current_qty)
         
         if high >= partial_target
-            strategy.close("Long", qty=1, comment="Partial TP")
-            strategy.exit("Long Trail", "Long", stop=entry_price + 5, limit=take_profit, qty=1)
+            strategy.close("Long", qty=math.round(current_qty/2), comment="Partial TP")
+            strategy.exit("Long Trail", "Long", stop=entry_price + 5, limit=take_profit, qty=math.round(current_qty/2))
             partial_closed := true
 
 // Short trade management  
@@ -54,13 +107,14 @@ if strategy.position_size < 0
     stop_loss = ny_high
     take_profit = entry_price - range_size
     partial_target = entry_price - (range_size * 0.5)
+    current_qty = math.abs(strategy.position_size)
     
     if not partial_closed
-        strategy.exit("Short Exit", "Short", stop=stop_loss, limit=take_profit, qty=2)
+        strategy.exit("Short Exit", "Short", stop=stop_loss, limit=take_profit, qty=current_qty)
         
         if low <= partial_target
-            strategy.close("Short", qty=1, comment="Partial TP")
-            strategy.exit("Short Trail", "Short", stop=entry_price - 5, limit=take_profit, qty=1)
+            strategy.close("Short", qty=math.round(current_qty/2), comment="Partial TP")
+            strategy.exit("Short Trail", "Short", stop=entry_price - 5, limit=take_profit, qty=math.round(current_qty/2))
             partial_closed := true
 
 // Reset partial closed flag when no position
