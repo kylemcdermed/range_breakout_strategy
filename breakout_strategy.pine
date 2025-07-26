@@ -1,137 +1,137 @@
 //@version=5
-strategy("Dual Session Range Breakout", overlay=true, default_qty_type=strategy.percent_of_equity, default_qty_value=100, pyramiding=0, commission_type=strategy.commission.cash_per_contract, commission_value=2.5, slippage=1)
+strategy("NY AM + PM Session Range Breakout", overlay=true, default_qty_type=strategy.percent_of_equity, default_qty_value=100, pyramiding=0, commission_type=strategy.commission.cash_per_contract, commission_value=2.5, slippage=1)
 
-// NY Session Variables
-var float ny_high = na
-var float ny_low = na
-var float ny_range_size = na
-var bool ny_partial_closed = false
+// NY AM Session Variables
+var float ny_am_high = na
+var float ny_am_low = na
+var float ny_am_range_size = na
+var bool ny_am_partial_closed = false
 
-// London Session Variables
-var float london_high = na
-var float london_low = na
-var float london_range_size = na
-var bool london_partial_closed = false
+// NY PM Session Variables
+var float ny_pm_high = na
+var float ny_pm_low = na
+var float ny_pm_range_size = na
+var bool ny_pm_partial_closed = false
 
 current_hour = hour(time, "America/New_York")
-is_ny_session = (current_hour >= 7 and current_hour < 10)
-is_london_session = (current_hour >= 2 and current_hour < 5)
+is_ny_am_session = (current_hour >= 7 and current_hour < 10)
+is_ny_pm_session = (current_hour >= 13 and current_hour < 16)
 
 // Reset daily
 if ta.change(dayofmonth)
-    // Reset NY variables
-    ny_high := na
-    ny_low := na
-    ny_range_size := na
-    ny_partial_closed := false
+    // Reset NY AM variables
+    ny_am_high := na
+    ny_am_low := na
+    ny_am_range_size := na
+    ny_am_partial_closed := false
     
-    // Reset London variables
-    london_high := na
-    london_low := na
-    london_range_size := na
-    london_partial_closed := false
+    // Reset NY PM variables
+    ny_pm_high := na
+    ny_pm_low := na
+    ny_pm_range_size := na
+    ny_pm_partial_closed := false
     
     strategy.cancel_all()
 
-// ===== NY SESSION (7-10am) =====
-// Record NY high/low during 7-10am and set range size
-if is_ny_session
-    ny_high := na(ny_high) ? high : math.max(ny_high, high)
-    ny_low := na(ny_low) ? low : math.min(ny_low, low)
-    if not na(ny_high) and not na(ny_low)
-        ny_range_size := ny_high - ny_low
+// ===== NY AM SESSION (7-10am) =====
+// Record NY AM high/low during 7-10am and set range size
+if is_ny_am_session
+    ny_am_high := na(ny_am_high) ? high : math.max(ny_am_high, high)
+    ny_am_low := na(ny_am_low) ? low : math.min(ny_am_low, low)
+    if not na(ny_am_high) and not na(ny_am_low)
+        ny_am_range_size := ny_am_high - ny_am_low
 
-// Cancel NY orders after session ends
-if not is_ny_session and current_hour >= 10
-    strategy.cancel("NY_Long")
-    strategy.cancel("NY_Short")
+// Cancel NY AM orders after session ends
+if not is_ny_am_session and current_hour >= 10 and current_hour < 13
+    strategy.cancel("NY_AM_Long")
+    strategy.cancel("NY_AM_Short")
 
-// Place NY breakout entries during session
-if is_ny_session and not na(ny_high) and not na(ny_low)
-    strategy.entry("NY_Long", strategy.long, qty=1, stop=ny_high)
-    strategy.entry("NY_Short", strategy.short, qty=1, stop=ny_low)
+// Place NY AM breakout entries during session
+if is_ny_am_session and not na(ny_am_high) and not na(ny_am_low)
+    strategy.entry("NY_AM_Long", strategy.long, qty=1, stop=ny_am_high)
+    strategy.entry("NY_AM_Short", strategy.short, qty=1, stop=ny_am_low)
 
-// ===== LONDON SESSION (2-5am) =====
-// Record London high/low during 2-5am and set range size
-if is_london_session
-    london_high := na(london_high) ? high : math.max(london_high, high)
-    london_low := na(london_low) ? low : math.min(london_low, low)
-    if not na(london_high) and not na(london_low)
-        london_range_size := london_high - london_low
+// ===== NY PM SESSION (1:30-4pm) =====
+// Record NY PM high/low during 1:30-4pm and set range size
+if is_ny_pm_session
+    ny_pm_high := na(ny_pm_high) ? high : math.max(ny_pm_high, high)
+    ny_pm_low := na(ny_pm_low) ? low : math.min(ny_pm_low, low)
+    if not na(ny_pm_high) and not na(ny_pm_low)
+        ny_pm_range_size := ny_pm_high - ny_pm_low
 
-// Cancel London orders after session ends
-if not is_london_session and current_hour >= 5 and current_hour < 7
-    strategy.cancel("London_Long")
-    strategy.cancel("London_Short")
+// Cancel NY PM orders after session ends
+if not is_ny_pm_session and current_hour >= 16
+    strategy.cancel("NY_PM_Long")
+    strategy.cancel("NY_PM_Short")
 
-// Place London breakout entries during session
-if is_london_session and not na(london_high) and not na(london_low)
-    strategy.entry("London_Long", strategy.long, qty=1, stop=london_high)
-    strategy.entry("London_Short", strategy.short, qty=1, stop=london_low)
+// Place NY PM breakout entries during session
+if is_ny_pm_session and not na(ny_pm_high) and not na(ny_pm_low)
+    strategy.entry("NY_PM_Long", strategy.long, qty=1, stop=ny_pm_high)
+    strategy.entry("NY_PM_Short", strategy.short, qty=1, stop=ny_pm_low)
 
-// ===== NY TRADE MANAGEMENT =====
-// NY Long trade management
-if strategy.position_size > 0 and str.contains(strategy.opentrades.entry_id(strategy.opentrades - 1), "NY_Long")
+// ===== NY AM TRADE MANAGEMENT =====
+// NY AM Long trade management
+if strategy.position_size > 0 and str.contains(strategy.opentrades.entry_id(strategy.opentrades - 1), "NY_AM_Long")
     entry_price = strategy.position_avg_price
-    stop_loss = ny_low
-    take_profit = entry_price + ny_range_size
-    partial_target = entry_price + (ny_range_size * 0.5)
+    stop_loss = ny_am_low
+    take_profit = entry_price + ny_am_range_size
+    partial_target = entry_price + (ny_am_range_size * 0.5)
     
-    if not ny_partial_closed
-        strategy.exit("NY_Long_Exit", "NY_Long", stop=stop_loss, limit=take_profit, qty=1)
+    if not ny_am_partial_closed
+        strategy.exit("NY_AM_Long_Exit", "NY_AM_Long", stop=stop_loss, limit=take_profit, qty=1)
         
         if high >= partial_target
-            strategy.close("NY_Long", qty=0.5, comment="NY Partial TP")
-            strategy.exit("NY_Long_Trail", "NY_Long", stop=entry_price + 5, limit=take_profit, qty=0.5)
-            ny_partial_closed := true
+            strategy.close("NY_AM_Long", qty=0.5, comment="NY AM Partial TP")
+            strategy.exit("NY_AM_Long_Trail", "NY_AM_Long", stop=entry_price + 5, limit=take_profit, qty=0.5)
+            ny_am_partial_closed := true
 
-// NY Short trade management  
-if strategy.position_size < 0 and str.contains(strategy.opentrades.entry_id(strategy.opentrades - 1), "NY_Short")
+// NY AM Short trade management  
+if strategy.position_size < 0 and str.contains(strategy.opentrades.entry_id(strategy.opentrades - 1), "NY_AM_Short")
     entry_price = strategy.position_avg_price
-    stop_loss = ny_high
-    take_profit = entry_price - ny_range_size
-    partial_target = entry_price - (ny_range_size * 0.5)
+    stop_loss = ny_am_high
+    take_profit = entry_price - ny_am_range_size
+    partial_target = entry_price - (ny_am_range_size * 0.5)
     
-    if not ny_partial_closed
-        strategy.exit("NY_Short_Exit", "NY_Short", stop=stop_loss, limit=take_profit, qty=1)
+    if not ny_am_partial_closed
+        strategy.exit("NY_AM_Short_Exit", "NY_AM_Short", stop=stop_loss, limit=take_profit, qty=1)
         
         if low <= partial_target
-            strategy.close("NY_Short", qty=0.5, comment="NY Partial TP")
-            strategy.exit("NY_Short_Trail", "NY_Short", stop=entry_price - 5, limit=take_profit, qty=0.5)
-            ny_partial_closed := true
+            strategy.close("NY_AM_Short", qty=0.5, comment="NY AM Partial TP")
+            strategy.exit("NY_AM_Short_Trail", "NY_AM_Short", stop=entry_price - 5, limit=take_profit, qty=0.5)
+            ny_am_partial_closed := true
 
-// ===== LONDON TRADE MANAGEMENT =====
-// London Long trade management
-if strategy.position_size > 0 and str.contains(strategy.opentrades.entry_id(strategy.opentrades - 1), "London_Long")
+// ===== NY PM TRADE MANAGEMENT =====
+// NY PM Long trade management
+if strategy.position_size > 0 and str.contains(strategy.opentrades.entry_id(strategy.opentrades - 1), "NY_PM_Long")
     entry_price = strategy.position_avg_price
-    stop_loss = london_low
-    take_profit = entry_price + london_range_size
-    partial_target = entry_price + (london_range_size * 0.5)
+    stop_loss = ny_pm_low
+    take_profit = entry_price + ny_pm_range_size
+    partial_target = entry_price + (ny_pm_range_size * 0.5)
     
-    if not london_partial_closed
-        strategy.exit("London_Long_Exit", "London_Long", stop=stop_loss, limit=take_profit, qty=1)
+    if not ny_pm_partial_closed
+        strategy.exit("NY_PM_Long_Exit", "NY_PM_Long", stop=stop_loss, limit=take_profit, qty=1)
         
         if high >= partial_target
-            strategy.close("London_Long", qty=0.5, comment="London Partial TP")
-            strategy.exit("London_Long_Trail", "London_Long", stop=entry_price + 5, limit=take_profit, qty=0.5)
-            london_partial_closed := true
+            strategy.close("NY_PM_Long", qty=0.5, comment="NY PM Partial TP")
+            strategy.exit("NY_PM_Long_Trail", "NY_PM_Long", stop=entry_price + 5, limit=take_profit, qty=0.5)
+            ny_pm_partial_closed := true
 
-// London Short trade management  
-if strategy.position_size < 0 and str.contains(strategy.opentrades.entry_id(strategy.opentrades - 1), "London_Short")
+// NY PM Short trade management  
+if strategy.position_size < 0 and str.contains(strategy.opentrades.entry_id(strategy.opentrades - 1), "NY_PM_Short")
     entry_price = strategy.position_avg_price
-    stop_loss = london_high
-    take_profit = entry_price - london_range_size
-    partial_target = entry_price - (london_range_size * 0.5)
+    stop_loss = ny_pm_high
+    take_profit = entry_price - ny_pm_range_size
+    partial_target = entry_price - (ny_pm_range_size * 0.5)
     
-    if not london_partial_closed
-        strategy.exit("London_Short_Exit", "London_Short", stop=stop_loss, limit=take_profit, qty=1)
+    if not ny_pm_partial_closed
+        strategy.exit("NY_PM_Short_Exit", "NY_PM_Short", stop=stop_loss, limit=take_profit, qty=1)
         
         if low <= partial_target
-            strategy.close("London_Short", qty=0.5, comment="London Partial TP")
-            strategy.exit("London_Short_Trail", "London_Short", stop=entry_price - 5, limit=take_profit, qty=0.5)
-            london_partial_closed := true
+            strategy.close("NY_PM_Short", qty=0.5, comment="NY PM Partial TP")
+            strategy.exit("NY_PM_Short_Trail", "NY_PM_Short", stop=entry_price - 5, limit=take_profit, qty=0.5)
+            ny_pm_partial_closed := true
 
 // Reset partial closed flags when no position
 if strategy.position_size == 0
-    ny_partial_closed := false
-    london_partial_closed := false
+    ny_am_partial_closed := false
+    ny_pm_partial_closed := false
